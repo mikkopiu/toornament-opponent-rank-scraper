@@ -1,4 +1,6 @@
 const puppeteer = require('puppeteer')
+const SteamID = require('steamid')
+const fetch = require('node-fetch')
 const UserAgent = require('user-agents')
 const { Console } = require('console')
 const humanConsole = new Console(process.stderr)
@@ -35,13 +37,21 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
  */
 
 /**
+ * @typedef FaceitElo
+ * @type {Object}
+ * @property {String} [current]
+ * @property {String} [highest]
+ */
+
+/**
  * @typedef Player
  * @type {Object}
  * @property {String} name
  * @property {String} steamId
  * @property {Rank} [currentRank]
  * @property {Rank} [bestRank]
- * @property {String} [faceitElo]
+ * @property {FaceitElo} [faceitElo]
+ * @property {String} [esportalElo]
  */
 
 /**
@@ -121,7 +131,8 @@ async function getOpponents(teamUrl) {
 
         await page.goto(`https://csgostats.gg/player/${player.steamId}`)
 
-        let retries = 5
+        const maxRetries = 5
+        let retries = maxRetries
         let isActualPage = await page.evaluate(() => !!document.querySelector('#player-name'))
         // Retry until we get to the actual page, or exhaust retries
         while (!isActualPage) {
@@ -130,12 +141,14 @@ async function getOpponents(teamUrl) {
           }
 
           // Back off a bit
-          await delay(Math.random() * (5 - retries) * 1000)
+          await delay(Math.random() * (maxRetries - retries) * 1000)
           await page.setUserAgent(new UserAgent().toString())
           await page.goto(`https://csgostats.gg/player/${player.steamId}`)
+          isActualPage = await page.evaluate(() => !!document.querySelector('#player-name'))
           retries--
         }
 
+        // MM ranks
         const playerWithRanks = Object.assign(
           player,
           ({ currentRank, bestRank } = await page.evaluate((ranks) => {
@@ -170,8 +183,28 @@ async function getOpponents(teamUrl) {
           }, RANKS))
         )
 
-        await page.goto(`https://faceitfinder.com/profile/${player.steamId}`)
-        playerWithRanks.faceitElo = await page.evaluate(() => document.querySelectorAll('.account-faceit-stats-single strong')[1].textContent) // ELO
+        // FACEIT Elo
+        await page.goto(`https://faceitfinder.com/stats/${player.steamId}`)
+        playerWithRanks.faceitElo = await page.evaluate(() => {
+          const eloImg = document.querySelector('img[alt="ELO"]')
+          if (!eloImg) return {}
+          return {
+            current: eloImg.parentElement.parentElement.querySelector('.stats_totals_block_main_value').textContent.trim(),
+            highest: eloImg.parentElement.parentElement.querySelectorAll('.stats_totals_block_item')[2].querySelector('.stats_totals_block_item_value').textContent.trim()
+          }
+        })
+
+        // Esportal Elo
+        const playerSteamId3 = (new SteamID(player.steamId)).accountid // Esportal APIs use this format
+        const esportalSearchUrl = `https://api.esportal.com/user_profile/list?id=${playerSteamId3}`
+        const esportalProfiles = await (await fetch(esportalSearchUrl)).json()
+        if (esportalProfiles === null) {
+          playerWithRanks.esportalElo = -1
+        } else {
+          const esportalUsername = esportalProfiles[0].username
+          const esportalProfileUrl = `https://api.esportal.com/user_profile/get?username=${esportalUsername}`
+          playerWithRanks.esportalElo = Number((await (await fetch(esportalProfileUrl)).json()).elo)
+        }
 
         opponent.players.push(playerWithRanks)
       }
@@ -182,7 +215,13 @@ async function getOpponents(teamUrl) {
       humanConsole.log(`${name}:`)
       humanConsole.table(
         opponent.players.reduce((acc, { name, ...x }) => {
-          acc[name] = { 'Current Rank': x.currentRank.name, 'Best Rank': x.bestRank.name, 'FACEIT Elo': x.faceitElo }
+          acc[name] = {
+            'Current Rank': x.currentRank.name,
+            'Best Rank': x.bestRank.name,
+            'Current FACEIT Elo': x.faceitElo.current,
+            'Highest FACEIT Elo': x.faceitElo.highest,
+            'Current Esportal Elo': x.esportalElo
+          }
           return acc
         }, {})
       )
