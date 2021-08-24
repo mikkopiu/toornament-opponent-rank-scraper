@@ -41,6 +41,7 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
  * @property {String} steamId
  * @property {Rank} [currentRank]
  * @property {Rank} [bestRank]
+ * @property {String} [faceitElo]
  */
 
 /**
@@ -97,8 +98,6 @@ async function getOpponents(teamUrl) {
       // Gather all player names and IDs from the match page
       await page.goto(opponent.matchUrl)
 
-      const steamId = await page.evaluate(() => document.querySelector('.steam_player_id').textContent)
-
       /** @type {Player[]} */
       const players = await page.evaluate(
         (ownTeamName) =>
@@ -115,7 +114,7 @@ async function getOpponents(teamUrl) {
 
       for (const player of players) {
         // Don't abuse the website
-        await delay(Math.random() * 2000)
+        await delay(Math.random() * 5000)
 
         // csgostats.gg is protected by CloudFlare but using a random User Agent should avoid triggering the hCaptcha
         await page.setUserAgent(new UserAgent().toString())
@@ -137,41 +136,44 @@ async function getOpponents(teamUrl) {
           retries--
         }
 
-        opponent.players.push(
-          Object.assign(
-            player,
-            ({ currentRank, bestRank } = await page.evaluate((ranks) => {
-              const currentRankValue =
-                Number(
-                  document
-                    .querySelector('img[src^="https://static.csgostats.gg/images/ranks/"][width="92"]')
-                    ?.getAttribute('src')
-                    .replace('https://static.csgostats.gg/images/ranks/', '')
-                    .replace('.png', '')
-                ) || 0
-              const bestRankValue =
-                Number(
-                  document
-                    .querySelector('img[src^="https://static.csgostats.gg/images/ranks/"][width="24"]')
-                    ?.getAttribute('src')
-                    .replace('https://static.csgostats.gg/images/ranks/', '')
-                    .replace('.png', '')
-                ) ||
-                currentRankValue ||
-                0
-              return {
-                currentRank: {
-                  value: currentRankValue,
-                  name: ranks[currentRankValue],
-                },
-                bestRank: {
-                  value: bestRankValue,
-                  name: ranks[bestRankValue],
-                },
-              }
-            }, RANKS))
-          )
+        const playerWithRanks = Object.assign(
+          player,
+          ({ currentRank, bestRank } = await page.evaluate((ranks) => {
+            const currentRankValue =
+              Number(
+                document
+                  .querySelector('img[src^="https://static.csgostats.gg/images/ranks/"][width="92"]')
+                  ?.getAttribute('src')
+                  .replace('https://static.csgostats.gg/images/ranks/', '')
+                  .replace('.png', '')
+              ) || 0
+            const bestRankValue =
+              Number(
+                document
+                  .querySelector('img[src^="https://static.csgostats.gg/images/ranks/"][height="24"]')
+                  ?.getAttribute('src')
+                  .replace('https://static.csgostats.gg/images/ranks/', '')
+                  .replace('.png', '')
+              ) ||
+              currentRankValue ||
+              0
+            return {
+              currentRank: {
+                value: currentRankValue,
+                name: ranks[currentRankValue],
+              },
+              bestRank: {
+                value: bestRankValue,
+                name: ranks[bestRankValue],
+              },
+            }
+          }, RANKS))
         )
+
+        await page.goto(`https://faceitfinder.com/profile/${player.steamId}`)
+        playerWithRanks.faceitElo = await page.evaluate(() => document.querySelectorAll('.account-faceit-stats-single strong')[1].textContent) // ELO
+
+        opponent.players.push(playerWithRanks)
       }
 
       opponent.players = players.sort((a, b) => b.currentRank.value - a.currentRank.value)
@@ -180,7 +182,7 @@ async function getOpponents(teamUrl) {
       humanConsole.log(`${name}:`)
       humanConsole.table(
         opponent.players.reduce((acc, { name, ...x }) => {
-          acc[name] = { 'Current Rank': x.currentRank.name, 'Best Rank': x.bestRank.name }
+          acc[name] = { 'Current Rank': x.currentRank.name, 'Best Rank': x.bestRank.name, 'FACEIT Elo': x.faceitElo }
           return acc
         }, {})
       )
@@ -192,6 +194,7 @@ async function getOpponents(teamUrl) {
     await browser.close()
   } catch (error) {
     console.error(error)
+    process.exit(1)
   }
 }
 
