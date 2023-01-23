@@ -1,8 +1,9 @@
-const puppeteer = require('puppeteer')
-const SteamID = require('steamid')
-const fetch = require('node-fetch')
-const UserAgent = require('user-agents')
-const { Console } = require('console')
+import puppeteer from 'puppeteer'
+import SteamID from 'steamid'
+import fetch from 'node-fetch'
+import UserAgent from 'user-agents'
+import { Console } from 'console'
+
 const humanConsole = new Console(process.stderr)
 
 const RANKS = {
@@ -68,11 +69,13 @@ async function getOpponents(teamUrl) {
   try {
     const browser = await puppeteer.launch()
     const page = await browser.newPage()
+    // page.on('console', (log) => humanConsole.log(log.text()))
 
     // Gather all opponent names from the matches page
     await page.goto(teamUrl)
 
     const ownTeamName = await page.evaluate(() => document.querySelector('.match .title .name span').textContent.trim())
+    humanConsole.log(`Own team name: ${ownTeamName}`)
 
     /** @type {Object.<string, Opponent>} */
     const opponents = await page.evaluate(
@@ -86,6 +89,8 @@ async function getOpponents(teamUrl) {
             if (!name) {
               throw new Error("Something went wrong, can't find opponent team name")
             }
+
+            console.log(`Found opponent: ${name}`)
 
             if (!(name in prevOpponents)) {
               prevOpponents[name] = {
@@ -121,8 +126,11 @@ async function getOpponents(teamUrl) {
           })),
         ownTeamName
       )
+      humanConsole.log(`For opponent "${name}", found players:`)
+      humanConsole.table(players)
 
       for (const player of players) {
+        humanConsole.debug(`Looking up player: ${player.name};${player.steamId}`)
         // Don't abuse the website
         await delay(Math.random() * 5000)
 
@@ -149,39 +157,39 @@ async function getOpponents(teamUrl) {
         }
 
         // MM ranks
-        const playerWithRanks = Object.assign(
-          player,
-          ({ currentRank, bestRank } = await page.evaluate((ranks) => {
-            const currentRankValue =
-              Number(
-                document
-                  .querySelector('img[src^="https://static.csgostats.gg/images/ranks/"][width="92"]')
-                  ?.getAttribute('src')
-                  .replace('https://static.csgostats.gg/images/ranks/', '')
-                  .replace('.png', '')
-              ) || 0
-            const bestRankValue =
-              Number(
-                document
-                  .querySelector('img[src^="https://static.csgostats.gg/images/ranks/"][height="24"]')
-                  ?.getAttribute('src')
-                  .replace('https://static.csgostats.gg/images/ranks/', '')
-                  .replace('.png', '')
-              ) ||
-              currentRankValue ||
-              0
-            return {
-              currentRank: {
-                value: currentRankValue,
-                name: ranks[currentRankValue],
-              },
-              bestRank: {
-                value: bestRankValue,
-                name: ranks[bestRankValue],
-              },
-            }
-          }, RANKS))
-        )
+        const { currentRank, bestRank } = await page.evaluate((ranks) => {
+          const currentRankValue =
+            Number(
+              document
+                .querySelector('img[src^="https://static.csgostats.gg/images/ranks/"][width="92"]')
+                ?.getAttribute('src')
+                .replace('https://static.csgostats.gg/images/ranks/', '')
+                .replace('.png', '')
+            ) || 0
+          console.log(`Found current rank value: ${currentRankValue}`)
+          const bestRankValue =
+            Number(
+              document
+                .querySelector('img[src^="https://static.csgostats.gg/images/ranks/"][height="24"]')
+                ?.getAttribute('src')
+                .replace('https://static.csgostats.gg/images/ranks/', '')
+                .replace('.png', '')
+            ) ||
+            currentRankValue ||
+            0
+          console.log(`Found best rank value: ${bestRankValue}`)
+          return {
+            currentRank: {
+              value: currentRankValue,
+              name: ranks[currentRankValue],
+            },
+            bestRank: {
+              value: bestRankValue,
+              name: ranks[bestRankValue],
+            },
+          }
+        }, RANKS)
+        const playerWithRanks = Object.assign(player, { currentRank, bestRank })
 
         // FACEIT Elo
         await page.goto(`https://faceitfinder.com/stats/${player.steamId}`)
@@ -189,13 +197,18 @@ async function getOpponents(teamUrl) {
           const eloImg = document.querySelector('img[alt="ELO"]')
           if (!eloImg) return {}
           return {
-            current: eloImg.parentElement.parentElement.querySelector('.stats_totals_block_main_value').textContent.trim(),
-            highest: eloImg.parentElement.parentElement.querySelectorAll('.stats_totals_block_item')[2].querySelector('.stats_totals_block_item_value').textContent.trim()
+            current: eloImg.parentElement.parentElement
+              .querySelector('.stats_totals_block_main_value')
+              .textContent.trim(),
+            highest: eloImg.parentElement.parentElement
+              .querySelectorAll('.stats_totals_block_item')[2]
+              .querySelector('.stats_totals_block_item_value')
+              .textContent.trim(),
           }
         })
 
         // Esportal Elo
-        const playerSteamId3 = (new SteamID(player.steamId)).accountid // Esportal APIs use this format
+        const playerSteamId3 = new SteamID(player.steamId).accountid // Esportal APIs use this format
         const esportalSearchUrl = `https://api.esportal.com/user_profile/list?id=${playerSteamId3}`
         const esportalProfiles = await (await fetch(esportalSearchUrl)).json()
         if (esportalProfiles === null) {
@@ -220,7 +233,7 @@ async function getOpponents(teamUrl) {
             'Best Rank': x.bestRank.name,
             'Current FACEIT Elo': x.faceitElo.current,
             'Highest FACEIT Elo': x.faceitElo.highest,
-            'Current Esportal Elo': x.esportalElo
+            'Current Esportal Elo': x.esportalElo,
           }
           return acc
         }, {})

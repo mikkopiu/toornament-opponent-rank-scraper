@@ -2,14 +2,15 @@
   "name": "tors",
   "version": "0.1.0",
   "description": "Toornament opponent rank scraper -- Simple web scraper to get opponent ranks in a Toornament tournament for a single team",
-  "main": "index.js",
+  "main": "index.mjs",
   "author": "Mikko Piuhola <me@mikkopiuhola.fi>",
   "private": true,
+  "type": "module",
   "dependencies": {
-    "node-fetch": "^2.6.1",
-    "prettier": "^2.2.1",
-    "puppeteer": "^5.5.0",
+    "node-fetch": "^3.3.0",
+    "prettier": "^2.8.3",
+    "puppeteer": "^19.6.0",
     "steamid": "^2.0.0",
-    "user-agents": "^1.0.559"
+    "user-agents": "^1.0.1269"
   }
 }
