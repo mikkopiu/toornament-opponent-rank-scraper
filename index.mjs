@@ -6,8 +6,8 @@ import { Console } from 'console'
 
 const humanConsole = new Console(process.stderr)
 
-const RANKS = {
-  0: 'Missing',
+const MM_RANKS = {
+  0: 'N/A',
   1: 'S1',
   2: 'S2',
   3: 'S3',
@@ -26,6 +26,35 @@ const RANKS = {
   16: 'LEM',
   17: 'SMFC',
   18: 'GE',
+}
+
+const getEsportalRank = (elo) => {
+  switch (true) {
+    case elo < 1000:
+      return 'Silver'
+    case elo < 1100:
+      return 'Gold I'
+    case elo < 1200:
+      return 'Gold II'
+    case elo < 1300:
+      return 'Veteran I'
+    case elo < 1400:
+      return 'Veteran II'
+    case elo < 1500:
+      return 'Master I'
+    case elo < 1600:
+      return 'Master II'
+    case elo < 1700:
+      return 'Elite I'
+    case elo < 1800:
+      return 'Elite II'
+    case elo < 1900:
+      return 'Pro I'
+    case elo < 2000:
+      return 'Pro II'
+    default:
+      return 'Legend'
+  }
 }
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -182,7 +211,7 @@ async function getOpponents(teamUrl) {
               name: ranks[bestRankValue],
             },
           }
-        }, RANKS)
+        }, MM_RANKS)
         const playerWithRanks = Object.assign(player, { currentRank, bestRank })
 
         // FACEIT Elo
@@ -190,14 +219,24 @@ async function getOpponents(teamUrl) {
         playerWithRanks.faceitElo = await page.evaluate(() => {
           const eloImg = document.querySelector('img[alt="ELO"]')
           if (!eloImg) return {}
+          const currentElo = eloImg.parentElement.parentElement
+            .querySelector('.stats_totals_block_main_value')
+            .textContent.trim()
+          const currentEloLevel = eloImg.parentElement.parentElement
+            .querySelectorAll('.stats_totals_block_item')[0]
+            .querySelector('.stats_totals_block_item_value > img')
+            .getAttribute('src')
+            .replace('/resources/ranks/skill_level_', '')
+            .replace('_lg.png', '')
+            .trim()
+          // Contains pre-formatted data: "1234 (5)"
+          const highestEloCombined = eloImg.parentElement.parentElement
+            .querySelectorAll('.stats_totals_block_item')[2]
+            .querySelector('.stats_totals_block_item_value')
+            .textContent.trim()
           return {
-            current: eloImg.parentElement.parentElement
-              .querySelector('.stats_totals_block_main_value')
-              .textContent.trim(),
-            highest: eloImg.parentElement.parentElement
-              .querySelectorAll('.stats_totals_block_item')[2]
-              .querySelector('.stats_totals_block_item_value')
-              .textContent.trim(),
+            current: `${currentElo} (${currentEloLevel})`,
+            highest: highestEloCombined,
           }
         })
 
@@ -206,11 +245,12 @@ async function getOpponents(teamUrl) {
         const esportalSearchUrl = `https://api.esportal.com/user_profile/list?id=${playerSteamId3}`
         const esportalProfiles = await (await fetch(esportalSearchUrl)).json()
         if (esportalProfiles === null) {
-          playerWithRanks.esportalElo = -1
+          playerWithRanks.esportalElo = 'N/A'
         } else {
           const esportalUsername = esportalProfiles[0].username
           const esportalProfileUrl = `https://api.esportal.com/user_profile/get?username=${esportalUsername}`
-          playerWithRanks.esportalElo = Number((await (await fetch(esportalProfileUrl)).json()).elo)
+          const esportalElo = Number((await (await fetch(esportalProfileUrl)).json()).elo)
+          playerWithRanks.esportalElo = `${esportalElo} (${getEsportalRank(esportalElo)})`
         }
 
         opponent.players.push(playerWithRanks)
@@ -223,11 +263,12 @@ async function getOpponents(teamUrl) {
       humanConsole.table(
         opponent.players.reduce((acc, { name, ...x }) => {
           acc[name] = {
-            'Current Rank': x.currentRank.name,
-            'Best Rank': x.bestRank.name,
-            'Current FACEIT Elo': x.faceitElo.current,
-            'Highest FACEIT Elo': x.faceitElo.highest,
-            'Current Esportal Elo': x.esportalElo,
+            'ID': x.steamId,
+            'Current Rank': x.currentRank?.name ?? 'N/A',
+            'Best Rank': x.bestRank?.name ?? 'N/A',
+            'Current FACEIT Elo': x.faceitElo.current ?? 'N/A',
+            'Highest FACEIT Elo': x.faceitElo.highest ?? 'N/A',
+            'Current Esportal Elo': x.esportalElo ?? 'N/A',
           }
           return acc
         }, {})
