@@ -133,7 +133,7 @@ async function getOpponents(teamUrl) {
         // csgostats.gg is protected by CloudFlare but using a random User Agent should avoid triggering the hCaptcha
         await page.setUserAgent(new UserAgent().toString())
 
-        await page.goto(`https://csgostats.gg/player/${player.steamId}`)
+        await page.goto(`https://csgostats.gg/player/${player.steamId}`, { waitUntil: 'networkidle0' })
 
         const maxRetries = 5
         let retries = maxRetries
@@ -147,7 +147,7 @@ async function getOpponents(teamUrl) {
           // Back off a bit
           await delay(Math.random() * (maxRetries - retries) * 1000)
           await page.setUserAgent(new UserAgent().toString())
-          await page.goto(`https://csgostats.gg/player/${player.steamId}`)
+          await page.goto(`https://csgostats.gg/player/${player.steamId}`, { waitUntil: 'networkidle0' })
           isActualPage = await page.evaluate(() => !!document.querySelector('#player-name'))
           retries--
         }
