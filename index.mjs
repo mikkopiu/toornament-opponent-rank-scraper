@@ -162,12 +162,12 @@ async function getOpponents(teamUrl) {
         // csgostats.gg is protected by CloudFlare but using a random User Agent should avoid triggering the hCaptcha
         await page.setUserAgent(new UserAgent().toString())
 
-        await page.goto(`https://csgostats.gg/player/${player.steamId}`, { waitUntil: 'networkidle0' })
+        const res = await page.goto(`https://csgostats.gg/player/${player.steamId}`, { waitUntil: 'domcontentloaded' })
+        let isActualPage = res.status() === 200 // CloudFlare responds with 403
 
-        const maxRetries = 5
-        let retries = maxRetries
-        let isActualPage = await page.evaluate(() => !!document.querySelector('#player-name'))
         // Retry until we get to the actual page, or exhaust retries
+        const maxRetries = 10
+        let retries = maxRetries
         while (!isActualPage) {
           if (retries <= 0) {
             throw new Error('Exhausted retries while attempting to bypass CloudFlare hCaptcha')
@@ -176,8 +176,8 @@ async function getOpponents(teamUrl) {
           // Back off a bit
           await delay(Math.random() * (maxRetries - retries) * 1000)
           await page.setUserAgent(new UserAgent().toString())
-          await page.goto(`https://csgostats.gg/player/${player.steamId}`, { waitUntil: 'networkidle0' })
-          isActualPage = await page.evaluate(() => !!document.querySelector('#player-name'))
+          const res = await page.goto(`https://csgostats.gg/player/${player.steamId}`, { waitUntil: 'domcontentloaded' })
+          isActualPage = res.status() === 200 // CloudFlare responds with 403
           retries--
         }
 
@@ -186,18 +186,16 @@ async function getOpponents(teamUrl) {
           const currentRankValue =
             Number(
               document
-                .querySelector('img[src^="https://static.csgostats.gg/images/ranks/"][width="92"]')
+                .querySelector('.player-ranks img[width="92"]')
                 ?.getAttribute('src')
-                .replace('https://static.csgostats.gg/images/ranks/', '')
-                .replace('.png', '')
+                .match(/images\/ranks\/(?<rank>\d{0,2})\.png/).groups.rank
             ) || 0
           const bestRankValue =
             Number(
               document
-                .querySelector('img[src^="https://static.csgostats.gg/images/ranks/"][height="24"]')
+                .querySelector('.player-ranks img[height="24"]')
                 ?.getAttribute('src')
-                .replace('https://static.csgostats.gg/images/ranks/', '')
-                .replace('.png', '')
+                .match(/images\/ranks\/(?<rank>\d{0,2})\.png/).groups.rank
             ) ||
             currentRankValue ||
             0
