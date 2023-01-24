@@ -69,6 +69,7 @@ async function getOpponents(teamUrl) {
   try {
     const browser = await puppeteer.launch()
     const page = await browser.newPage()
+    // For debugging:
     // page.on('console', (log) => humanConsole.log(log.text()))
 
     // Gather all opponent names from the matches page
@@ -89,8 +90,6 @@ async function getOpponents(teamUrl) {
             if (!name) {
               throw new Error("Something went wrong, can't find opponent team name")
             }
-
-            console.log(`Found opponent: ${name}`)
 
             if (!(name in prevOpponents)) {
               prevOpponents[name] = {
@@ -126,11 +125,8 @@ async function getOpponents(teamUrl) {
           })),
         ownTeamName
       )
-      humanConsole.log(`For opponent "${name}", found players:`)
-      humanConsole.table(players)
 
       for (const player of players) {
-        humanConsole.debug(`Looking up player: ${player.name};${player.steamId}`)
         // Don't abuse the website
         await delay(Math.random() * 5000)
 
@@ -166,7 +162,6 @@ async function getOpponents(teamUrl) {
                 .replace('https://static.csgostats.gg/images/ranks/', '')
                 .replace('.png', '')
             ) || 0
-          console.log(`Found current rank value: ${currentRankValue}`)
           const bestRankValue =
             Number(
               document
@@ -177,7 +172,6 @@ async function getOpponents(teamUrl) {
             ) ||
             currentRankValue ||
             0
-          console.log(`Found best rank value: ${bestRankValue}`)
           return {
             currentRank: {
               value: currentRankValue,
